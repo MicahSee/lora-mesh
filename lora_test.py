@@ -15,6 +15,8 @@ spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
 
 try:
     rfm9x = adafruit_rfm9x.RFM9x(spi, CS, RESET, RADIO_FREQ_MHZ)
+    rfm9x.reset()
+
     print(f"RFM9x detected! Running at {RADIO_FREQ_MHZ} MHz")
 except Exception as e:
     print(f"Failed to find RFM9x: {e}")
@@ -42,7 +44,7 @@ while True:
     packet = rfm9x.receive(timeout=5.0) # Wait up to 5 seconds
     
     if packet is not None:
-        packet_text = str(packet, "utf-8")
+        packet_text = str(packet, "utf-8", errors="replace")
         rssi = rfm9x.last_rssi
         print(f"Received: {packet_text}")
         print(f"Signal Strength: {rssi} dBm")
