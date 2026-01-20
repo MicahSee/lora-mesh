@@ -7,3 +7,7 @@ env/
 bin/
 include/
 lib/
+Scripts/
+pyvenv.cfg
+Include/
+Lib/

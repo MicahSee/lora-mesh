@@ -13,7 +13,8 @@ class RFM95xRadio(RadioInterface):
 
         try:
             self.radio = adafruit_rfm9x.RFM9x(spi, self.cs, self.reset, freq_mhz)
-            self.radio.reset()
+            # self.radio.reset()
+            self.radio.enable_crc = True
             self.radio.tx_power = tx_power
             print(f"RFM9x detected! Running at {freq_mhz} MHz with TX power {tx_power} dBm")
         except Exception as e:
