@@ -3,7 +3,7 @@ import busio
 from digitalio import DigitalInOut
 import board
 import adafruit_rfm9x
-from secure_lora.radio import RadioInterface
+from .radio import RadioInterface
 
 class RFM95xRadio(RadioInterface):
     """Radio interface for the Adafruit RFM95x module."""

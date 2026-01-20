@@ -4,6 +4,7 @@ from digitalio import DigitalInOut
 import board
 import adafruit_rfm9x
 from secure_lora.radio import RadioInterface
+from secure_lora.platforms import RFM95xRadio
 
 # SPI and pins
 spi = busio.SPI(clock=board.SCK, MOSI=board.MOSI, MISO=board.MISO)
