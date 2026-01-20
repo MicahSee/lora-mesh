@@ -46,6 +46,11 @@ class SecureLoRa:
             print(f"  Payload: {packet.get_payload_as_string()}")
             print(f"  HMAC: {packet.hmac.hex()}")
 
+        if packet.sender_id == self.sender_id:
+            if self.debug:
+                print("  Ignoring packet from self.")
+            return None
+
         key = self.key_store.get_key(packet.sender_id)
         if not key:
             return None
