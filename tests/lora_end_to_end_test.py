@@ -1,4 +1,4 @@
-from time import time
+import time
 import board
 import busio
 from secure_lora.packet import Packet
