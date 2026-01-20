@@ -48,3 +48,6 @@ class Packet:
             payload,
             hmac
         )
+    
+    def get_payload_as_string(self) -> str:
+        return self.payload.decode('utf-8', errors='replace')

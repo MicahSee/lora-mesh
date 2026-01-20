@@ -5,12 +5,13 @@ from .replay import ReplayProtection
 from .keystore import KeyStore
 
 class SecureLoRa:
-    def __init__(self, radio, sender_id, key_store: 'KeyStore'):
+    def __init__(self, radio, sender_id, key_store: 'KeyStore', debug: bool = False):
         self.radio = radio
         self.sender_id = sender_id
         self.key_store = key_store
         self.counter = 0
         self.replay = ReplayProtection()
+        self.debug = debug
 
     def send(self, msg_type: int, payload: bytes):
         self.counter += 1
@@ -36,6 +37,14 @@ class SecureLoRa:
             return None
 
         packet = Packet.parse(data)
+
+        if self.debug:
+            print(f"Received packet from {hex(packet.sender_id)}:")
+            print(f"  Version: {packet.version}")
+            print(f"  MsgType: {packet.msg_type}")
+            print(f"  Counter: {packet.counter}")
+            print(f"  Payload: {packet.get_payload_as_string()}")
+            print(f"  HMAC: {packet.hmac.hex()}")
 
         key = self.key_store.get_key(packet.sender_id)
         if not key:

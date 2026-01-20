@@ -18,7 +18,7 @@ RESET = board.D25
 
 # Initialize radio
 radio = RFM95xRadio(spi, CS, RESET, freq_mhz=915.0, tx_power=5)
-secure_lora = SecureLoRa(radio, 0xA3F91C42, keys)
+secure_lora = SecureLoRa(radio, 0xA3F91C42, keys, debug=True)
 # secure_lora = SecureLoRa(radio, 0xB4E82D53, keys)
 
 counter = 0
@@ -32,7 +32,7 @@ while True:
     packet = secure_lora.receive()
     
     if packet:
-        print(f"Received: {packet.payload}")
+        print(f"Received: {packet.get_payload_as_string()}")
     else:
         print("No reply received.")
 
