@@ -4,6 +4,7 @@ src/secure_lora/constants.py
 src/secure_lora/crypto.py
 src/secure_lora/keystore.py
 src/secure_lora/packet.py
+src/secure_lora/platforms.py
 src/secure_lora/radio.py
 src/secure_lora/replay.py
 src/secure_lora/secure_lora.py
@@ -11,3 +12,5 @@ src/secure_lora.egg-info/PKG-INFO
 src/secure_lora.egg-info/SOURCES.txt
 src/secure_lora.egg-info/dependency_links.txt
 src/secure_lora.egg-info/top_level.txt
+tests/test_dummy_network.py
+tests/test_secure_lora.py

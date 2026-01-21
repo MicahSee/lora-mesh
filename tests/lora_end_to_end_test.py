@@ -6,6 +6,7 @@ from secure_lora.secure_lora import SecureLoRa
 from secure_lora.keystore import KeyStore
 from secure_lora.radio import RadioInterface
 from secure_lora.platforms import RFM95xRadio
+from secure_lora.constants import MsgType
 
 keys = KeyStore()
 keys.add_key(0xA3F91C42, b"supersecretkey123")
@@ -26,7 +27,7 @@ counter = 0
 while True:
     msg = f"Hello from Pi #{counter}"
     print(f"Sending: {msg}")
-    secure_lora.send(1, bytes(msg, "utf-8"))
+    secure_lora.send(MsgType.DATA, bytes(msg, "utf-8"))
 
     print("Waiting for packets (5s timeout)...")
     packet = secure_lora.receive()

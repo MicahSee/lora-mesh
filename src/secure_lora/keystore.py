@@ -7,3 +7,6 @@ class KeyStore:
 
     def get_key(self, sender_id: int) -> bytes:
         return self.keys.get(sender_id)
+    
+    def has_sender(self, sender_id: int) -> bool:
+        return sender_id in self.keys

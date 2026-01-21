@@ -4,25 +4,56 @@ from secure_lora.keystore import KeyStore
 from secure_lora.radio import RadioInterface
 
 from dummy_network import LoopbackNetwork, DummyRadio
+import time
 
+# -------------------------------
+# Setup keys and radios
+# -------------------------------
 keys = KeyStore()
 keys.add_key(0xA3F91C42, b"supersecretkey123")
 keys.add_key(0xB4E82D53, b"anothersecretkey")
 
 network = LoopbackNetwork()
+
 radio1 = DummyRadio(network)
-lora = SecureLoRa(radio1, 0xA3F91C42, keys)
-
 radio2 = DummyRadio(network)
-lora2 = SecureLoRa(radio2, 0xB4E82D53, keys)
 
-def test_secure_lora_communication():
+# Use context managers to ensure threads stop automatically
+with SecureLoRa(radio1, 0xA3F91C42, keys, debug=True) as lora1, \
+     SecureLoRa(radio2, 0xB4E82D53, keys, debug=True) as lora2:
+
+    # -------------------------------
+    # Test 1: Basic secure message
+    # -------------------------------
     message = b"Secure Hello LoRa"
+    lora1.send(1, message)
 
-    # lora sends a secure message to lora2
-    lora.send(1, message)
+    # Allow background threads a tiny moment to process
+    time.sleep(0.1)
 
-    # lora2 receives the message
-    received_packet = lora2.receive()
+    received_packet = lora2.receive(timeout=1.0)
 
+    assert received_packet is not None, "lora2 did not receive any packet"
     assert received_packet.payload == message, "lora2 did not receive the correct secure message"
+
+    print("Test 1 passed: secure message received correctly")
+
+    time.sleep(10.0)  # Wait to allow discovery to occur
+
+    # -------------------------------
+    # Test 2: Discovery handling
+    # -------------------------------
+    # Send discovery from lora1
+    # lora1.send_discovery()
+
+    # # Give threads time to process discovery
+    # time.sleep(0.1)
+
+    # # Discovery packets are handled internally, lora2 should not see them in receive()
+    # pkt = lora2.receive(timeout=0.2)
+    # assert pkt is None, "Discovery packets should not be delivered to application receive()"
+
+    # # Check that the sender was marked seen
+    # assert 0xA3F91C42 in keys._seen_nodes, "Discovery sender not recorded"
+
+    # print("Test 2 passed: discovery handled in background correctly")
