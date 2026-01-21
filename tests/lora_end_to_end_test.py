@@ -28,7 +28,7 @@ radio = RFM95xRadio(spi, CS, RESET, freq_mhz=915.0, tx_power=5)
 # -----------------------------
 # SecureLoRa instance
 # -----------------------------
-secure_lora = SecureLoRa(radio, os.environ.get("SENDER_ID"), keys, debug=True)
+secure_lora = SecureLoRa(radio, int(os.environ.get("SENDER_ID"), 16), keys, debug=True)
 
 counter = 0
 
