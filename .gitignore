@@ -11,3 +11,4 @@ Scripts/
 pyvenv.cfg
 Include/
 Lib/
+.env

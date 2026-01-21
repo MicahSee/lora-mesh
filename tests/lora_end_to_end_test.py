@@ -6,6 +6,8 @@ from secure_lora.secure_lora import SecureLoRa
 from secure_lora.keystore import KeyStore
 from secure_lora.platforms import RFM95xRadio
 from secure_lora.constants import MsgType
+from dotenv import load_dotenv
+import os
 
 # -----------------------------
 # Key store setup
@@ -26,7 +28,7 @@ radio = RFM95xRadio(spi, CS, RESET, freq_mhz=915.0, tx_power=5)
 # -----------------------------
 # SecureLoRa instance
 # -----------------------------
-secure_lora = SecureLoRa(radio, 0xA3F91C42, keys, debug=True)
+secure_lora = SecureLoRa(radio, os.environ.get("SENDER_ID"), keys, debug=True)
 
 counter = 0
 
