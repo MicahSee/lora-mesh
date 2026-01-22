@@ -31,5 +31,6 @@ class RFM95xRadio(RadioInterface):
         """
         packet = self.radio.receive()
 
-        print(f"RFM95x received raw data: {packet}")
+        if packet is not None:
+            print(f"RFM95x received raw data: {packet}")
         return packet

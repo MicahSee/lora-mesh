@@ -121,7 +121,7 @@ async def send_message(message: MessageCreate):
 
     try:
         # Send via secure_lora using MsgType.DATA
-        secure_lora.send(MsgType.DATA, f"{message.recipient}:{message.content}".encode("utf-8"))
+        secure_lora.send(MsgType.DATA, message.content.encode("utf-8"))
         messages.append(new_message)
 
     except Exception as e:
