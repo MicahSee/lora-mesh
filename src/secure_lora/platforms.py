@@ -24,10 +24,12 @@ class RFM95xRadio(RadioInterface):
         """Send bytes over the radio."""
         self.radio.send(data)
 
-    def receive(self, timeout: float = 5.0) -> bytes | None:
+    def receive(self, timeout: float = 0.0) -> bytes | None:
         """
         Receive bytes from the radio.
         Returns None if no packet is received within the timeout.
         """
-        packet = self.radio.receive(timeout=timeout)
+        packet = self.radio.receive()
+
+        print(f"RFM95x received raw data: {packet}")
         return packet
