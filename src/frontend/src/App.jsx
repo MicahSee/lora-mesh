@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Radio, Signal, User } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000';
-const WS_URL = 'ws://localhost:8000/ws';
+const serverAddr = import.meta.env.VITE_SERVER_ADDR;
+
+const API_URL = `${serverAddr}/api`;
+const WS_URL = `${serverAddr}/ws`;
 
 function App() {
   const [nodes, setNodes] = useState([]);
