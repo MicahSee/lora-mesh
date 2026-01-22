@@ -57,6 +57,9 @@ class SecureLoRa:
         raw = packet.serialize_without_hmac()
         packet.hmac = compute_hmac(key, raw)
 
+        if self.debug:
+            print(f"Sending packet | type={msg_type} counter={self.counter}")
+
         self.radio.send(packet.serialize())
 
     def receive(self, timeout: float | None = None):
