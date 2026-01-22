@@ -3,7 +3,7 @@ import { Send, Radio, Signal, User } from 'lucide-react';
 
 const serverAddr = import.meta.env.VITE_SERVER_ADDR;
 
-const API_URL = `http://${serverAddr}/api`;
+const API_URL = `http://${serverAddr}`;
 const WS_URL = `ws://${serverAddr}/ws`;
 
 function App() {
