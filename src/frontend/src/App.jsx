@@ -3,8 +3,8 @@ import { Send, Radio, Signal, User } from 'lucide-react';
 
 const serverAddr = import.meta.env.VITE_SERVER_ADDR;
 
-const API_URL = `${serverAddr}/api`;
-const WS_URL = `${serverAddr}/ws`;
+const API_URL = `http://${serverAddr}/api`;
+const WS_URL = `ws://${serverAddr}/ws`;
 
 function App() {
   const [nodes, setNodes] = useState([]);
