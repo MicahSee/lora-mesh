@@ -66,7 +66,7 @@ class SecureLoRa:
             Packet or None
         """
         try:
-            return self._rx_queue.get(timeout=timeout)
+            return self._rx_queue.get(block=False)
         except queue.Empty:
             return None
 
