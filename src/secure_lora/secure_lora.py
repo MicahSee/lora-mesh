@@ -57,7 +57,7 @@ class SecureLoRa:
         raw = packet.serialize_without_hmac()
         packet.hmac = compute_hmac(key, raw)
 
-        if self.debug:
+        if self.debug and msg_type != MsgType.DISCOVERY:
             print(f"Sending packet | type={msg_type} counter={self.counter}")
 
         self.radio.send(packet.serialize())
