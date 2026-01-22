@@ -1,4 +1,6 @@
 import os
+
+from dotenv import load_dotenv
 import board
 import busio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -32,6 +34,7 @@ radio = RFM95xRadio(spi, CS, RESET, freq_mhz=915.0, tx_power=5)
 # -----------------------------
 # SecureLoRa instance
 # -----------------------------
+load_dotenv()
 secure_lora = SecureLoRa(radio, int(os.environ.get("SENDER_ID"), 16), keys, debug=True)
 
 # ---------------------- CORS ----------------------
