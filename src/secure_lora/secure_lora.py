@@ -42,7 +42,8 @@ class SecureLoRa:
     # ------------------------
 
     def send(self, msg_type: int, payload: bytes):
-        self.counter += 1
+        if msg_type != MsgType.DISCOVERY:
+            self.counter += 1
 
         packet = Packet(
             version=PROTOCOL_VERSION,
