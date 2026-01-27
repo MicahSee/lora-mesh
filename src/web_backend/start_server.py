@@ -15,6 +15,10 @@ import uvicorn
 load_dotenv()
 
 keys = KeyStore()
+
+if "KEYS" not in os.environ or "SENDER_ID" not in os.environ:
+    raise EnvironmentError("KEYS and SENDER_ID must be set in the environment variables or defined in .env file.")
+
 for key in os.environ["KEYS"].split(","):
     node_id, key_hex = key.split(":")
     keys.add_key(int(node_id, 16), bytes.fromhex(key_hex))
