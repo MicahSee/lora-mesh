@@ -19,6 +19,8 @@ class LoopbackNetwork:
             if radio != sender:
                 self._queues[radio].append(data)
 
+        print(data)
+
     def receive(self, radio):
         if self._queues[radio]:
             return self._queues[radio].pop(0)

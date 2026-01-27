@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="secure_lora",            # name of your package
+    name="lora_mesh",            # name of your package
     version="0.1.0",               # start with 0.1.0
     packages=find_packages(where="src"),  # finds packages under src/
     package_dir={"": "src"},       # tells Python that packages live in src/

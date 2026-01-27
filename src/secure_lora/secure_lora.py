@@ -1,7 +1,5 @@
 from .constants import *
 from .packet import Packet
-from .crypto import compute_hmac, verify_hmac
-from .replay import ReplayProtection
 from .keystore import KeyStore
 
 import threading
@@ -9,6 +7,8 @@ import queue
 import time
 from collections import defaultdict
 
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
 
 class SecureLoRa:
     def __init__(self, radio, sender_id, key_store: 'KeyStore', debug: bool = False):
@@ -16,7 +16,6 @@ class SecureLoRa:
         self.sender_id = sender_id
         self.key_store = key_store
         self.counter = 0
-        self.replay = ReplayProtection()
         self.debug = debug
         self.peers = defaultdict(dict)
 
@@ -45,38 +44,41 @@ class SecureLoRa:
         if msg_type != MsgType.DISCOVERY:
             self.counter += 1
 
+        # Get encryption key
+        key = self.key_store.get_key(self.sender_id)
+        if not key:
+            raise ValueError(f"No key for sender {self.sender_id}")
+
+        # Use counter + sender_id as a 12-byte nonce (8+4)
+        nonce = self.counter.to_bytes(8, "big") + self.sender_id.to_bytes(4, "big")
+
+        # Encrypt payload with AES-GCM
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+        ciphertext, auth_tag = cipher.encrypt_and_digest(payload)
+
+        # Build packet
         packet = Packet(
             version=PROTOCOL_VERSION,
             sender_id=self.sender_id,
             msg_type=msg_type,
-            counter=self.counter,
-            payload=payload,
-            hmac=b""
+            payload=ciphertext,
+            auth_tag=auth_tag,   # reuse auth_tag field for AES-GCM tag
+            nonce=nonce
         )
-
-        key = self.key_store.get_key(self.sender_id)
-        raw = packet.serialize_without_hmac()
-        packet.hmac = compute_hmac(key, raw)
 
         if self.debug and msg_type != MsgType.DISCOVERY:
             print(f"Sending packet | type={msg_type} counter={self.counter}")
 
         self.radio.send(packet.serialize())
 
-    def receive(self, timeout: float | None = None):
-        """
-        Client-facing receive.
-        Returns:
-            Packet or None
-        """
+    def receive(self, timeout: float | None = 0.0) -> Packet | None:
         try:
-            return self._rx_queue.get(block=False)
+            return self._rx_queue.get(block=True, timeout=timeout)
         except queue.Empty:
             return None
 
     def _discovery_loop(self):
         time.sleep(1.0)
-
         while self._running:
             self._send_discovery()
             time.sleep(self._discovery_interval)
@@ -125,10 +127,11 @@ class SecureLoRa:
         if self.debug:
             print(f"Received packet from {hex(packet.sender_id)}")
             print(f"  Type: {packet.msg_type}")
-            print(f"  Counter: {packet.counter}")
 
         # Ignore self
         if packet.sender_id == self.sender_id:
+            if self.debug:
+                print("Ignoring own packet")
             return None
 
         key = self.key_store.get_key(packet.sender_id)
@@ -137,16 +140,19 @@ class SecureLoRa:
                 print("Unknown sender, dropping packet")
             return None
 
-        raw = packet.serialize_without_hmac()
-        if not verify_hmac(key, raw, packet.hmac):
+        # Reconstruct nonce
+        cipher = AES.new(key, AES.MODE_GCM, nonce=packet.nonce)
+
+        try:
+            # Decrypt and verify tag
+            plaintext = cipher.decrypt_and_verify(packet.payload, packet.auth_tag)
+        except ValueError:
             if self.debug:
-                print("HMAC verification failed")
+                print("AES-GCM authentication failed")
             return None
 
-        if not self.replay.check_and_update(packet.sender_id, packet.counter):
-            if self.debug:
-                print("Replay detected")
-            return None
+        # Replace payload with plaintext
+        packet.payload = plaintext
 
         return packet
 
@@ -154,26 +160,21 @@ class SecureLoRa:
         if self.debug:
             print(f"Discovery from {hex(packet.sender_id)}")
 
-        # Example behavior:
-        # - mark node as seen
-        # - update last-seen timestamp
-        # - optionally respond
-
         if not self.key_store.has_sender(packet.sender_id):
             if self.debug:
                 print(f"Peer discovered but not recognized: {hex(packet.sender_id)}")
         else:
             self.peers[packet.sender_id]['last_seen'] = time.time()
-        # Optional: reply to discovery
-        # self.send(MsgType.DISCOVERY_ACK, self.sender_id.to_bytes(4, "big"))
 
     def get_peers(self):
         return self.peers
+
+    def get_sender_id(self):
+        return self.sender_id
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc, tb):
         self.stop()
-        # return False → propagate exceptions (recommended)
         return False

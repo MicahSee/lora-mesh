@@ -1,243 +1,250 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Radio, Signal, User } from 'lucide-react';
+import { Send, Radio, Signal, Settings } from 'lucide-react';
 
-const serverAddr = import.meta.env.VITE_SERVER_ADDR;
-
-const API_URL = `http://${serverAddr}`;
-const WS_URL = `ws://${serverAddr}/ws`;
+// Use relative URLs when served from FastAPI, or env variable for dev
+const API_URL = import.meta.env.DEV
+  ? `http://${import.meta.env.VITE_SERVER_ADDR || 'localhost:8000'}`
+  : '';
+const WS_URL = import.meta.env.DEV
+  ? `ws://${import.meta.env.VITE_SERVER_ADDR || 'localhost:8000'}/ws`
+  : `ws://${window.location.host}/ws`;
 
 function App() {
+  const [view, setView] = useState('chat');
   const [nodes, setNodes] = useState([]);
   const [messages, setMessages] = useState([]);
   const [selectedContact, setSelectedContact] = useState(null);
   const [newMessage, setNewMessage] = useState('');
-  const [currentNodeId, setCurrentNodeId] = useState('raspberry-pi-001');
+
+  const [currentNodeId, setCurrentNodeId] = useState('');
+  const [nodeName, setNodeName] = useState('');
   const [isConnected, setIsConnected] = useState(false);
+  const [originalNodeName, setOriginalNodeName] = useState('');
+
+
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  /* -------------------- LOAD CONFIG FROM BACKEND -------------------- */
+
   useEffect(() => {
-    const connectWebSocket = () => {
-      if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) return;
+    const loadConfig = async () => {
+      const res = await fetch(`${API_URL}/api/config`);
+      const data = await res.json();
+      setCurrentNodeId(data.node_id);
+      setNodeName(data.node_name);
+      setOriginalNodeName(data.node_name);
+    };
+
+    loadConfig();
+  }, []);
+
+  /* -------------------- UPDATE NODE NAME -------------------- */
+
+  const saveNodeNameIfChanged = async () => {
+    if (nodeName === originalNodeName) return;
+
+    setOriginalNodeName(nodeName);
+
+    await fetch(`${API_URL}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_name: nodeName }),
+    });
+  };
+
+  /* -------------------- WEBSOCKET -------------------- */
+
+  useEffect(() => {
+    const connect = () => {
+      if (wsRef.current) return;
 
       const ws = new WebSocket(WS_URL);
 
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        setIsConnected(true);
-      };
+      ws.onopen = () => setIsConnected(true);
 
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+
         if (data.type === 'new_message') {
-          setMessages(prev => {
-            if (prev.some(msg => msg.id === data.data.id)) return prev;
-            return [...prev, data.data];
-          });
-        } else if (data.type === 'nodes_updated') {
+          setMessages((prev) =>
+            prev.some((m) => m.id === data.data.id)
+              ? prev
+              : [...prev, data.data]
+          );
+        }
+
+        if (data.type === 'nodes_updated') {
           setNodes(data.data);
         }
       };
 
       ws.onclose = () => {
-        console.log('WebSocket disconnected');
         setIsConnected(false);
         wsRef.current = null;
-        setTimeout(connectWebSocket, 3000);
+        setTimeout(connect, 3000);
       };
 
       wsRef.current = ws;
     };
 
-    connectWebSocket();
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-    };
+    connect();
+    return () => wsRef.current?.close();
   }, []);
 
-  useEffect(() => {
-    const fetchNodes = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/nodes`);
-        const data = await response.json();
-        setNodes(data);
-      } catch (error) {
-        console.error('Error fetching nodes:', error);
-      }
-    };
-    fetchNodes();
-    const interval = setInterval(fetchNodes, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  /* -------------------- FETCH DATA -------------------- */
 
   useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/messages`);
-        const data = await response.json();
-        setMessages(data);
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-      }
-    };
-    fetchMessages();
+    fetch(`${API_URL}/api/nodes`)
+      .then((r) => r.json())
+      .then(setNodes);
+
+    fetch(`${API_URL}/api/messages`)
+      .then((r) => r.json())
+      .then(setMessages)
   }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, selectedContact]);
 
+  /* -------------------- HELPERS -------------------- */
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedContact) return;
 
-    try {
-      const response = await fetch(`${API_URL}/api/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: selectedContact.id,
-          content: newMessage,
-        }),
-      });
-      const sentMessage = await response.json();
-      setMessages(prev => [...prev, sentMessage]);
-      setNewMessage('');
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
+    const res = await fetch(`${API_URL}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender: currentNodeId,
+        sender_name: nodeName,
+        recipient: selectedContact.id,
+        content: newMessage,
+      }),
+    });
+
+    const sent = await res.json();
+    setMessages((prev) => [...prev, sent]);
+    setNewMessage('');
   };
 
-  const getContactMessages = () => {
-    if (!selectedContact) return [];
-    return messages
-      .filter(msg =>
-        (msg.sender === selectedContact.id && msg.recipient === currentNodeId) ||
-        (msg.sender === currentNodeId && msg.recipient === selectedContact.id)
+  const getContactMessages = () =>
+    messages
+      .filter(
+        (m) =>
+          (m.sender === selectedContact?.id &&
+            m.recipient === currentNodeId) ||
+          (m.sender === currentNodeId &&
+            m.recipient === selectedContact?.id)
       )
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  };
 
-  const getLastMessage = (nodeId) => {
-    const contactMessages = messages.filter(msg =>
-      msg.sender === nodeId || msg.recipient === nodeId
-    );
-    if (contactMessages.length === 0) return null;
-    return contactMessages[contactMessages.length - 1];
-  };
+  const formatTime = (t) =>
+    new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const getSignalStrengthColor = (strength) => {
-    if (!strength) return 'text-gray-400';
-    if (strength > -50) return 'text-green-400';
-    if (strength > -70) return 'text-yellow-400';
-    return 'text-red-400';
-  };
+  /* -------------------- UI -------------------- */
 
   return (
     <div className="flex h-screen bg-gray-900 text-white font-mono">
-      {/* Sidebar */}
+      {/* SIDEBAR */}
       <div className="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
         <div className="p-4 border-b border-gray-700">
-          <div className="flex items-center justify-between mb-2">
-            <h1 className="text-xl font-bold flex items-center gap-2 uppercase tracking-wider">
-              <Radio className="w-6 h-6" />
-              Tactical Mesh
+          <div className="flex justify-between items-center mb-2">
+            <h1 className="flex items-center gap-2 font-bold">
+              <Radio /> Tactical Mesh
             </h1>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-xs text-gray-400">{isConnected ? 'Online' : 'Offline'}</span>
-            </div>
+            <div
+              className={`w-2 h-2 rounded-full ${
+                isConnected ? 'bg-green-500' : 'bg-red-500'
+              }`}
+            />
           </div>
-          <p className="text-xs text-gray-400">Node: {currentNodeId}</p>
+
+          <p className="text-xs text-gray-400">
+            {nodeName} ({currentNodeId})
+          </p>
+
+          <button
+            onClick={() => setView(view === 'settings' ? 'chat' : 'settings')}
+            className="mt-2 w-full text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded flex items-center justify-center gap-2"
+          >
+            <Settings className="w-4 h-4" />
+            {view === 'settings' ? 'Back to Chat' : 'Configuration'}
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-gray-900">
-          {nodes.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
-              <Signal className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>Scanning for nodes...</p>
-            </div>
-          ) : (
-            nodes.map(node => {
-              const lastMsg = getLastMessage(node.id);
-              return (
-                <button
-                  key={node.id}
-                  onClick={() => setSelectedContact(node)}
-                  className={`w-full p-4 border-b border-gray-700 hover:bg-gray-700 transition-colors text-left ${
-                    selectedContact?.id === node.id ? 'bg-gray-700' : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <User className="w-5 h-5 text-gray-400" />
-                      <span className="font-semibold">{node.name}</span>
-                    </div>
-                    <Signal className={`w-4 h-4 ${getSignalStrengthColor(node.signal_strength)}`} />
-                  </div>
-                  <p className="text-xs text-gray-400 mb-1">{node.id}</p>
-                  {lastMsg && (
-                    <p className="text-sm text-gray-500 truncate">
-                      {lastMsg.sender === currentNodeId ? 'You: ' : ''}
-                      {lastMsg.content}
-                    </p>
-                  )}
-                </button>
-              );
-            })
-          )}
+        <div className="flex-1 overflow-y-auto">
+          {nodes.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => {
+                setSelectedContact(n);
+                setView('chat');
+              }}
+              className={`w-full p-4 border-b border-gray-700 text-left hover:bg-gray-700 ${
+                selectedContact?.id === n.id ? 'bg-gray-700' : ''
+              }`}
+            >
+              <p className="font-semibold">{n.name}</p>
+              <p className="text-xs text-gray-400">{n.id}</p>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-gray-900">
-        {selectedContact ? (
+      {/* MAIN */}
+      <div className="flex-1 flex flex-col">
+        {view === 'settings' ? (
+          <div className="p-6 max-w-xl">
+            <h2 className="text-xl font-bold mb-4">Node Configuration</h2>
+
+            <label className="block text-xs mb-1">Node ID</label>
+            <input
+              value={currentNodeId}
+              disabled
+              className="w-full mb-4 bg-gray-800 border border-gray-700 px-3 py-2 rounded opacity-60 cursor-not-allowed"
+            />
+
+            <label className="block text-xs mb-1">Display Name</label>
+            <input
+              value={nodeName}
+              onChange={(e) => setNodeName(e.target.value)}
+              onBlur={saveNodeNameIfChanged}
+              className="w-full bg-gray-800 border border-gray-700 px-3 py-2 rounded"
+            />
+
+            <p className="text-xs text-gray-500 mt-2">
+              Changes are saved immediately.
+            </p>
+          </div>
+        ) : selectedContact ? (
           <>
-            {/* Header */}
-            <div className="p-4 bg-gray-800 border-b border-gray-700 flex justify-between items-center">
-              <div>
-                <h2 className="font-bold text-lg tracking-wide">{selectedContact.name}</h2>
-                <p className="text-xs text-gray-400">{selectedContact.id}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-gray-500 uppercase">Signal</p>
-                <p className={`text-sm font-medium ${getSignalStrengthColor(selectedContact.signal_strength)}`}>
-                  {selectedContact.signal_strength} dBm
-                </p>
-              </div>
+            <div className="p-4 border-b border-gray-700 bg-gray-800">
+              <h2 className="font-bold">{selectedContact.name}</h2>
+              <p className="text-xs text-gray-400">{selectedContact.id}</p>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {getContactMessages().map((msg, idx) => {
-                const isOwnMessage = msg.sender === currentNodeId;
+              {getContactMessages().map((m, i) => {
+                const own = m.sender === currentNodeId;
                 return (
-                  <div key={idx} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                  <div key={i} className={`flex ${own ? 'justify-end' : ''}`}>
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg border ${
-                        isOwnMessage
-                          ? 'bg-green-900 border-green-700 text-green-100'
-                          : 'bg-gray-800 border-gray-700 text-gray-200'
+                      className={`max-w-md p-3 rounded border ${
+                        own
+                          ? 'bg-green-900 border-green-700'
+                          : 'bg-gray-800 border-gray-700'
                       }`}
                     >
-                      <p className="tracking-wide">{msg.content}</p>
-                      <div className="flex items-center justify-end gap-2 mt-1 text-xs text-gray-400">
-                        <span>{formatTime(msg.timestamp)}</span>
-                        {isOwnMessage && (
-                          <span>
-                            {msg.status === 'sent' ? '✓' : msg.status === 'delivered' ? '✓✓' : '✗'}
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-xs text-gray-400 mb-1">
+                        {m.sender_name || m.sender}
+                      </p>
+                      <p>{m.content}</p>
+                      <p className="text-xs text-right text-gray-400">
+                        {formatTime(m.timestamp)}
+                      </p>
                     </div>
                   </div>
                 );
@@ -245,31 +252,24 @@ function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
-            <form onSubmit={handleSendMessage} className="p-4 bg-gray-800 border-t border-gray-700 flex items-center gap-2">
+            <form
+              onSubmit={handleSendMessage}
+              className="p-4 border-t border-gray-700 bg-gray-800 flex gap-2"
+            >
               <input
-                type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
+                className="flex-1 bg-gray-900 px-3 py-2 rounded"
                 placeholder="Enter message..."
-                className="flex-1 bg-gray-900 text-green-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-green-600"
               />
-              <button
-                type="submit"
-                disabled={!newMessage.trim()}
-                className="bg-green-700 hover:bg-green-600 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors"
-              >
-                <Send className="w-4 h-4" />
-                Send
+              <button className="bg-green-700 px-4 py-2 rounded flex gap-2">
+                <Send className="w-4 h-4" /> Send
               </button>
             </form>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
-            <div className="text-center">
-              <Radio className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg uppercase tracking-wide">Select a contact to start messaging</p>
-            </div>
+            Select a contact
           </div>
         )}
       </div>

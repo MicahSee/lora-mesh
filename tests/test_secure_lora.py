@@ -3,20 +3,20 @@ from secure_lora.secure_lora import SecureLoRa
 from secure_lora.keystore import KeyStore
 from secure_lora.radio import RadioInterface
 
-from dummy_network import LoopbackNetwork, DummyRadio
+from tests.dummy_radio import DummyRadio
 import time
+
+from Crypto.Random import get_random_bytes
 
 # -------------------------------
 # Setup keys and radios
 # -------------------------------
 keys = KeyStore()
-keys.add_key(0xA3F91C42, b"supersecretkey123")
-keys.add_key(0xB4E82D53, b"anothersecretkey")
+keys.add_key(0xA3F91C42, get_random_bytes(16))
+keys.add_key(0xB4E82D53, get_random_bytes(16))
 
-network = LoopbackNetwork()
-
-radio1 = DummyRadio(network)
-radio2 = DummyRadio(network)
+radio1 = DummyRadio(str(0xA3F91C42))
+radio2 = DummyRadio(str(0xB4E82D53))
 
 # Use context managers to ensure threads stop automatically
 with SecureLoRa(radio1, 0xA3F91C42, keys, debug=True) as lora1, \

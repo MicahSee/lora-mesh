@@ -55,6 +55,10 @@ class DummySecureLoRa:
     def get_peers(self) -> List[str]:
         """Return a static list of dummy peers"""
         return self._peers.copy()
+    
+    def get_sender_id(self) -> str:
+        """Return the node's sender ID"""
+        return self.node_id
 
 
 # Example usage
