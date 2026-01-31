@@ -230,10 +230,13 @@ function App() {
   const formatTime = (t) =>
     new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  const formatParamName = (name) =>
+    name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
   /* -------------------- UI -------------------- */
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white font-mono">
+    <div className="flex h-screen bg-gray-900 text-white font-sans">
       {/* SIDEBAR */}
       <div className="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
         <div className="p-4 border-b border-gray-700">
@@ -261,7 +264,7 @@ function App() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-500">
           {nodes.map((n) => (
             <button
               key={n.id}
@@ -283,7 +286,7 @@ function App() {
       {/* MAIN */}
       <div className="flex-1 flex flex-col">
         {view === 'settings' ? (
-          <div className="p-6 max-w-xl overflow-y-auto">
+          <div className="p-6 max-w-xl overflow-y-auto flex-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-500">
             <h2 className="text-xl font-bold mb-4">Node Configuration</h2>
 
             <label className="block text-xs mb-1">Node ID</label>
@@ -318,7 +321,7 @@ function App() {
                   <div key={param.name} className="border border-gray-700 rounded p-3">
                     <div className="flex justify-between items-center mb-1">
                       <label className="text-sm font-medium">
-                        {param.name.replace(/_/g, ' ')}
+                        {formatParamName(param.name)}
                         {param.unit && <span className="text-gray-400 ml-1">({param.unit})</span>}
                       </label>
                       {param.readonly && (
@@ -415,7 +418,7 @@ function App() {
               <p className="text-xs text-gray-400">{selectedContact.id}</p>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-900 [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-500">
               {getContactMessages().map((m, i) => {
                 const own = m.sender === currentNodeId;
                 return (
