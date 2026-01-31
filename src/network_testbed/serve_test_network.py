@@ -303,6 +303,7 @@ async def broadcast_updates():
                 except:
                     if client not in dead_clients:
                         dead_clients.append(client)
+            
 
         for client in dead_clients:
             if client in shared_network.ws_clients:

@@ -1,28 +1,30 @@
+from email.mime import message
 import os
 import asyncio
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
+from secure_lora.secure_lora import SecureLoRa
 from secure_lora.constants import MsgType
 
 # =====================================================
 # App Factory
 # =====================================================
 
-def create_app(secure_lora):
+def create_app(secure_lora: SecureLoRa):
     app = FastAPI()
 
     # Attach SecureLoRa to app state
     app.state.secure_lora = secure_lora
-    app.state.current_node_id = secure_lora.get_sender_id()
-    app.state.current_node_name = secure_lora.get_sender_id()
+    app.state.current_node_id = str(secure_lora.get_sender_id())
+    app.state.current_node_name = str(secure_lora.get_sender_id())
 
     # ---------------------- CORS ----------------------
     app.add_middleware(
@@ -61,10 +63,13 @@ class Message(BaseModel):
     content: str
     timestamp: str
     status: str = "sent"
+    sender_name: Optional[str] = None
 
 class MessageCreate(BaseModel):
+    sender: str
     recipient: str
     content: str
+    sender_name: Optional[str] = None
 
 class Node(BaseModel):
     id: str
@@ -75,6 +80,10 @@ class Node(BaseModel):
 class Config(BaseModel):
     node_name: str
 
+class RadioParameterUpdate(BaseModel):
+    name: str
+    value: int | float | bool | str
+
 
 # =====================================================
 # In-memory Storage
@@ -82,6 +91,7 @@ class Config(BaseModel):
 
 messages: List[Message] = []
 nodes: Dict[str, Node] = {}
+prev_nodes: Set[str] = set()
 active_connections: List[WebSocket] = []
 
 # =====================================================
@@ -102,12 +112,16 @@ async def notify_websockets(msg: dict):
 
 def register_routes(app: FastAPI):
 
-    @app.get("/")
-    async def root():
-        return {"message": "Secure LoRa Mesh Network API", "node_id": app.state.current_node_id}
+    # @app.get("/")
+    # async def root():
+    #     # redirect to index.html
+    #     return RedirectResponse(url="/index.html")
 
     @app.get("/api/nodes", response_model=List[Node])
     async def get_nodes(request: Request):
+        if nodes:
+            return list(nodes.values())
+
         secure_lora = request.app.state.secure_lora
 
         try:
@@ -118,6 +132,7 @@ def register_routes(app: FastAPI):
                     name=str(peer_id),
                     last_seen=datetime.now().isoformat(),
                 )
+                prev_nodes.add(str(peer_id))
         except Exception as e:
             print(f"Error fetching peers: {e}")
 
@@ -140,6 +155,47 @@ def register_routes(app: FastAPI):
         request.app.state.current_node_name = config.node_name
         return {"message": "Configuration updated successfully."}
 
+    # ---------------------- Radio Parameter API ----------------------
+
+    @app.get("/api/radio/parameters")
+    async def get_radio_parameters(request: Request):
+        """Get all tunable radio parameter definitions for UI generation."""
+        secure_lora = request.app.state.secure_lora
+        radio = secure_lora.radio
+
+        params = radio.get_parameter_definitions()
+        return [
+            {
+                "name": p.name,
+                "param_type": p.param_type,
+                "valid_values": p.valid_values,
+                "unit": p.unit,
+                "description": p.description,
+                "step": p.step,
+                "readonly": p.readonly,
+            }
+            for p in params
+        ]
+
+    @app.get("/api/radio/values")
+    async def get_radio_values(request: Request):
+        """Get current values of all radio parameters."""
+        secure_lora = request.app.state.secure_lora
+        radio = secure_lora.radio
+        return radio.get_parameters()
+
+    @app.post("/api/radio/values")
+    async def set_radio_value(update: RadioParameterUpdate, request: Request):
+        """Set a radio parameter value."""
+        secure_lora = request.app.state.secure_lora
+        radio = secure_lora.radio
+
+        try:
+            radio.set_parameter(update.name, update.value)
+            return {"success": True, "name": update.name, "value": update.value}
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+
     @app.post("/api/messages")
     async def send_message(message: MessageCreate, request: Request):
         secure_lora = request.app.state.secure_lora
@@ -147,14 +203,16 @@ def register_routes(app: FastAPI):
         new_message = Message(
             id=f"{app.state.current_node_id}_{len(messages)}_{datetime.now().isoformat()}",
             sender=app.state.current_node_id,
+            sender_name=message.sender_name,
             recipient=message.recipient,
             content=message.content,
             timestamp=datetime.now().isoformat(),
             status="sent",
-        )  
+        )
 
         try:
-            secure_lora.send(MsgType.DATA, message.content.encode("utf-8"))
+            content = message.sender_name + "|" + message.content if message.sender_name else message.content
+            secure_lora.send(MsgType.DATA, content.encode("utf-8"))
             messages.append(new_message)
         except Exception as e:
             new_message.status = "failed"
@@ -220,17 +278,26 @@ async def discover_nodes(app: FastAPI):
     while True:
         try:
             peers = secure_lora.get_peers()
-            for peer_id in peers:
+            update = peers - prev_nodes
+
+            for peer_id in update:
                 nodes[str(peer_id)] = Node(
                     id=str(peer_id),
                     name=str(peer_id),
                     last_seen=datetime.now().isoformat(),
                 )
+
+            if update:
+                prev_nodes.update(update)
+                print(f"Discovered new peers: {list(update)}, sending update to websockets.")
+                await notify_websockets({
+                    "type": "nodes_update",
+                    "data": [node.model_dump() for node in nodes.values()],
+                })
         except Exception as e:
             print(f"Error discovering nodes: {e}")
 
-        await asyncio.sleep(30)
-
+        await asyncio.sleep(0.5)
 
 async def listen_for_lora_messages(app: FastAPI):
     secure_lora = app.state.secure_lora
@@ -240,13 +307,19 @@ async def listen_for_lora_messages(app: FastAPI):
             packet = secure_lora.receive()
             if packet:
                 content_str = packet.get_payload_as_string()
+                sender_name = content_str.split("|")[0] if "|" in content_str else None
+                content = content_str.split("|", 1)[1] if "|" in content_str else content_str
                 sender = str(packet.sender_id)
+
+                if sender_name:
+                    nodes[sender].name = sender_name
 
                 incoming_msg = Message(
                     id=f"{sender}_{len(messages)}_{datetime.now().isoformat()}",
                     sender=sender,
+                    sender_name=sender_name,
                     recipient=app.state.current_node_id,
-                    content=content_str,
+                    content=content,
                     timestamp=datetime.now().isoformat(),
                     status="received",
                 )

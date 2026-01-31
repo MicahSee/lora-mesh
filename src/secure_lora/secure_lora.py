@@ -167,7 +167,7 @@ class SecureLoRa:
             self.peers[packet.sender_id]['last_seen'] = time.time()
 
     def get_peers(self):
-        return self.peers
+        return set(id for id in self.peers.keys())
 
     def get_sender_id(self):
         return self.sender_id

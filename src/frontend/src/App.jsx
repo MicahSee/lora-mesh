@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Radio, Signal, Settings } from 'lucide-react';
+import { Send, Radio, Signal, Settings, Sliders } from 'lucide-react';
 
 // Use relative URLs when served from FastAPI, or env variable for dev
 const API_URL = import.meta.env.DEV
@@ -21,6 +21,9 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [originalNodeName, setOriginalNodeName] = useState('');
 
+  const [radioParams, setRadioParams] = useState([]);
+  const [radioValues, setRadioValues] = useState({});
+
 
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -38,6 +41,48 @@ function App() {
 
     loadConfig();
   }, []);
+
+  /* -------------------- LOAD RADIO PARAMETERS -------------------- */
+
+  const loadRadioParams = async () => {
+    try {
+      const [paramsRes, valuesRes] = await Promise.all([
+        fetch(`${API_URL}/api/radio/parameters`),
+        fetch(`${API_URL}/api/radio/values`),
+      ]);
+      const params = await paramsRes.json();
+      const values = await valuesRes.json();
+      setRadioParams(params);
+      setRadioValues(values);
+    } catch (err) {
+      console.error('Failed to load radio parameters:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadRadioParams();
+  }, []);
+
+  const updateRadioParam = async (name, value) => {
+    // Optimistic update
+    setRadioValues((prev) => ({ ...prev, [name]: value }));
+
+    try {
+      const res = await fetch(`${API_URL}/api/radio/values`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, value }),
+      });
+      const result = await res.json();
+      if (!result.success) {
+        console.error('Failed to update radio param:', result.error);
+        loadRadioParams(); // Revert on failure
+      }
+    } catch (err) {
+      console.error('Failed to update radio param:', err);
+      loadRadioParams();
+    }
+  };
 
   /* -------------------- UPDATE NODE NAME -------------------- */
 
@@ -67,6 +112,22 @@ function App() {
         const data = JSON.parse(e.data);
 
         if (data.type === 'new_message') {
+          if (data.data.sender_name) {
+            setNodes((prev) => {
+              const exists = prev.some((n) => n.id === data.data.sender);
+
+              if (exists) {
+                return prev.map((n) =>
+                  n.id === data.data.sender 
+                    ? { ...n, name: data.data.sender_name } 
+                    : n
+                );
+              } else {
+                return [...prev, { id: data.data.sender, name: data.data.sender_name }];
+              }
+            });
+          }
+
           setMessages((prev) =>
             prev.some((m) => m.id === data.data.id)
               ? prev
@@ -74,7 +135,8 @@ function App() {
           );
         }
 
-        if (data.type === 'nodes_updated') {
+        if (data.type === 'nodes_update') {
+          console.log('Nodes updated via websocket:', data.data);
           setNodes(data.data);
         }
       };
@@ -114,20 +176,44 @@ function App() {
     e.preventDefault();
     if (!newMessage.trim() || !selectedContact) return;
 
-    const res = await fetch(`${API_URL}/api/messages`, {
+    const messageContent = newMessage.trim();
+    const tempId = `temp-${Date.now()}`;
+
+    const tempMessage = {
+      id: tempId,
+      sender: currentNodeId,
+      recipient: selectedContact.id,
+      content: newMessage,
+      timestamp: new Date().toISOString(),
+      status: 'sending',
+    }
+
+    setMessages((prev) => [...prev, tempMessage]);
+    setNewMessage('');
+
+    fetch(`${API_URL}/api/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sender: currentNodeId,
         sender_name: nodeName,
         recipient: selectedContact.id,
-        content: newMessage,
+        content: messageContent,
       }),
+    })
+    .then(async (res) => {
+      if (!res.ok) throw new Error();
+      const sentData = await res.json();
+      
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === tempId ? { ...sentData, status: sentData.status, id: sentData.id } : msg))
+      );
+    })
+    .catch(() => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === tempId ? { ...msg, status: 'failed'} : msg))
+      );
     });
-
-    const sent = await res.json();
-    setMessages((prev) => [...prev, sent]);
-    setNewMessage('');
   };
 
   const getContactMessages = () =>
@@ -197,7 +283,7 @@ function App() {
       {/* MAIN */}
       <div className="flex-1 flex flex-col">
         {view === 'settings' ? (
-          <div className="p-6 max-w-xl">
+          <div className="p-6 max-w-xl overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Node Configuration</h2>
 
             <label className="block text-xs mb-1">Node ID</label>
@@ -218,6 +304,109 @@ function App() {
             <p className="text-xs text-gray-500 mt-2">
               Changes are saved immediately.
             </p>
+
+            {/* Radio Parameters */}
+            <h2 className="text-xl font-bold mt-8 mb-4 flex items-center gap-2">
+              <Sliders className="w-5 h-5" /> Radio Settings
+            </h2>
+
+            {radioParams.length === 0 ? (
+              <p className="text-gray-500 text-sm">Loading radio parameters...</p>
+            ) : (
+              <div className="space-y-4">
+                {radioParams.map((param) => (
+                  <div key={param.name} className="border border-gray-700 rounded p-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-sm font-medium">
+                        {param.name.replace(/_/g, ' ')}
+                        {param.unit && <span className="text-gray-400 ml-1">({param.unit})</span>}
+                      </label>
+                      {param.readonly && (
+                        <span className="text-xs bg-gray-700 px-2 py-0.5 rounded">Read-only</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mb-2">{param.description}</p>
+
+                    {/* Boolean toggle */}
+                    {param.param_type === 'bool' && (
+                      <button
+                        onClick={() => !param.readonly && updateRadioParam(param.name, !radioValues[param.name])}
+                        disabled={param.readonly}
+                        className={`px-3 py-1 rounded text-sm ${
+                          radioValues[param.name]
+                            ? 'bg-green-700 hover:bg-green-600'
+                            : 'bg-gray-700 hover:bg-gray-600'
+                        } ${param.readonly ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {radioValues[param.name] ? 'Enabled' : 'Disabled'}
+                      </button>
+                    )}
+
+                    {/* Enum select */}
+                    {param.param_type === 'enum' && (
+                      <select
+                        value={radioValues[param.name] ?? ''}
+                        onChange={(e) => {
+                          const val = isNaN(Number(e.target.value))
+                            ? e.target.value
+                            : Number(e.target.value);
+                          updateRadioParam(param.name, val);
+                        }}
+                        disabled={param.readonly}
+                        className={`w-full bg-gray-800 border border-gray-700 px-3 py-2 rounded ${
+                          param.readonly ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        {param.valid_values.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                            {param.unit ? ` ${param.unit}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Numeric range (int/float) */}
+                    {(param.param_type === 'int' || param.param_type === 'float') && (
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={param.valid_values[0]}
+                          max={param.valid_values[1]}
+                          step={param.step || (param.param_type === 'float' ? 0.1 : 1)}
+                          value={radioValues[param.name] ?? param.valid_values[0]}
+                          onChange={(e) => {
+                            const val = param.param_type === 'int'
+                              ? parseInt(e.target.value)
+                              : parseFloat(e.target.value);
+                            updateRadioParam(param.name, val);
+                          }}
+                          disabled={param.readonly}
+                          className={`flex-1 ${param.readonly ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        />
+                        <input
+                          type="number"
+                          min={param.valid_values[0]}
+                          max={param.valid_values[1]}
+                          step={param.step || (param.param_type === 'float' ? 0.1 : 1)}
+                          value={radioValues[param.name] ?? ''}
+                          onChange={(e) => {
+                            const val = param.param_type === 'int'
+                              ? parseInt(e.target.value)
+                              : parseFloat(e.target.value);
+                            if (!isNaN(val)) updateRadioParam(param.name, val);
+                          }}
+                          disabled={param.readonly}
+                          className={`w-24 bg-gray-800 border border-gray-700 px-2 py-1 rounded text-sm ${
+                            param.readonly ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : selectedContact ? (
           <>
@@ -238,13 +427,35 @@ function App() {
                           : 'bg-gray-800 border-gray-700'
                       }`}
                     >
-                      <p className="text-xs text-gray-400 mb-1">
-                        {m.sender_name || m.sender}
-                      </p>
                       <p>{m.content}</p>
-                      <p className="text-xs text-right text-gray-400">
-                        {formatTime(m.timestamp)}
-                      </p>
+                      
+                      {/* Flex container for Time + Status Icon */}
+                      <div className="flex items-center justify-end gap-1.5 mt-1">
+                        <p className="text-xs text-gray-400">
+                          {formatTime(m.timestamp)}
+                        </p>
+
+                        {/* Status Indicator Logic */}
+                        {own && (
+                          <span className="flex items-center">
+                            {m.status === 'sending' && (
+                              <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                            )}
+                            
+                            {m.status === 'sent' && (
+                              <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+
+                            {m.status === 'failed' && (
+                              <span title="Failed to send" className="text-red-500 text-xs leading-none">
+                                ⚠️
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -262,8 +473,9 @@ function App() {
                 className="flex-1 bg-gray-900 px-3 py-2 rounded"
                 placeholder="Enter message..."
               />
-              <button className="bg-green-700 px-4 py-2 rounded flex gap-2">
-                <Send className="w-4 h-4" /> Send
+              <button className="bg-green-700 px-4 py-2 rounded flex items-center gap-2">
+                <Send className="w-4 h-4" />
+                <span>Send</span>
               </button>
             </form>
           </>
