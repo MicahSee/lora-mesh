@@ -26,8 +26,8 @@ def radio_param(
     Decorator to register a property as a tunable radio parameter.
 
     Usage:
-        @radio_param("int", (400, 960), unit="MHz", description="Carrier frequency")
         @property
+        @radio_param("int", (400, 960), unit="MHz", description="Carrier frequency")
         def frequency(self) -> int:
             return self._frequency
 
